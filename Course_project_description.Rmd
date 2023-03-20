@@ -1,0 +1,215 @@
+---
+title: "STA 207 Final Project"
+author: "Weijie Peng 921586179"
+date: "03/20/2023"
+output: html_document
+---
+```{r echo=FALSE, eval=FALSE}
+library(knitr)
+library(dplyr)
+```
+
+```{r echo=FALSE, eval=TRUE}
+session=list()
+for(i in 1:5){
+  session[[i]]=readRDS(paste('/Users/dululu/Desktop/STA 207 final project/session',i,'.rds',sep=''))
+}
+```
+
+```{r echo=FALSE, eval=TRUE}
+firingrate_mean=list()
+t=0.4
+for (ID in 1:5){
+  n.trials=length(session[[ID]]$spks)
+  n.neurons=dim(session[[ID]]$spks[[1]])[1]
+  # Obtain the firing rate
+  firingrate=numeric(n.trials)
+  for(i in 1:n.trials){
+    firingrate[i]=sum(session[[ID]]$spks[[i]])/n.neurons/t
+  }
+  df=data.frame(firingrate_mean=firingrate,left=session[[ID]]$contrast_left,right=session[[ID]]$contrast_right,session=ID,feedback=session[[ID]]$feedback_type)
+  firingrate_mean[[ID]]=df
+}
+
+firingratemean=rbind(firingrate_mean[[1]],firingrate_mean[[2]],firingrate_mean[[3]],firingrate_mean[[4]],firingrate_mean[[5]])
+```
+
+## Abstract
+
+This report aims to understand how neurons in the visual cortex respond to stimuli presented on the left and right and how this information can be utilized to predict the outcome of each trial. To address these questions, we using five session of two mice data. We found that neurons in the visual cortex showed differential responses to stimuli presented on the left and right, with some neurons showing additive effects. Furthermore, we used two fixed models to predict the outcome of each trial from the neural activity patterns, achieving high accuracy in our predictions.
+
+## Introduction
+
+Understanding the neural mechanisms underlying behavior is a fundamental question in neuroscience. Nicholas A. Steinmetz et al.(2019) use Neuropixels probes to record from approximately 30,000 neurons in 42 brain regions of mice performing a visual discrimination task. This report presents a study using  Steinmetz et al.'s data from approximately 1200 sessions in 2 mice performing a visual discrimination task.
+
+The primary aim of this study is to investigate the modulation of neural activity in the visual cortex by two distinct stimuli and to determine how this information can be used to predict trial outcomes. The research objectives center on two key questions: firstly, how do neurons in the visual cortex respond to left and right stimuli, and secondly, can we predict the outcome of each trial based on the neural activities and stimuli? By answering these questions, this study has the potential to uncover valuable insights into the fundamental mechanisms of visual processing and decision-making in the brain, with potential applications in various fields such as neuroscience and brain-computer interfaces.
+
+
+## Background
+
+The objective of Steinmetz et al.'s (2019) study was to examine the neural basis of visual perception and decision-making in mice. In total, the study used 10 mice and conducted 39 experimental sessions for each mouse. During the sessions, visual stimuli were presented randomly to the mice on two screens placed on either side of them. The stimuli had varying contrast levels ranging from 0 to 1, with values of 0, 0.25, 0.5, and 1, and were presented at different times during the trials. The mice were required to use a wheel controlled by their forepaws to make decisions based on the visual stimuli, and the outcome of their decisions resulted in either a reward or a penalty.
+
+The neural activity of the mice's visual cortex was recorded during the trials in the form of spike trains, which are collections of timestamps corresponding to neuron firing. The spike trains of neurons in the visual cortex were analyzed during the period from the onset of the stimuli to 0.4 seconds post-onset. Specifically, the data analyzed in this report only used five sessions (Sessions 1 to 5) from two mice (Cori and Frossman).
+
+For each trial, there are five variables available for analysis. The feedback_type variable indicates the type of feedback received by the mice, coded as 1 for success and -1 for failure. The contrast_left and contrast_right variables denote the contrast levels of the visual stimuli presented on the left and right sides of the mice, respectively. The time variable represents the centers of the time bins, while the spks variable indicates the number of spikes of neurons in the visual cortex during each time bin.
+
+
+## Descriptive analysis.
+
+To explore the dataset and generate summary statistics and plots, we first defined the outcome variable as the mean firing rate. The mean firing rate was calculated as the average number of spikes per second across all neurons within a given 0.4 seconds time interval for each trial. We chose this approach because it is a commonly used measure of neural activity and provides a way to summarize the complex firing patterns of multiple neurons.The unique feature of this dataset is that each session contains varying numbers of neurons. To account for this, we calculated the mean firing rate separately for each session and used these session-specific means in our analysis.
+
+We found that each session has nearly an even number of neurons. Session 5 has the highest number of neurons recorded by 254, and session 1 has the lowest number of neurons recording 214; the range is 40.
+```{r echo=FALSE, eval=TRUE}
+# Create table of session counts
+session_counts <- table(firingratemean $session)
+
+# Display table
+session_counts
+```
+
+The firing rates across the five sessions exhibit distinct distribution patterns. We found that session 1 has the most extensive range, and session 2 has the smallest range. Session 5 and session four concentration between 1 to 2 spk/s, while sessions 1,2,3 concentration between 3 to 4 spk/s. 
+```{r echo=FALSE, eval=TRUE}
+attach(firingratemean)
+library(ggplot2)
+ggplot(firingratemean, aes(x = firingrate_mean, fill = factor(session))) + 
+  geom_density(alpha = 0.5) +
+  labs(x = "Firing Rate Mean", y = "Density") +
+  scale_fill_discrete(name = "Session")
+```
+
+The box plot shows that the average firing rate mean in session 1 is higher than the other four sessions. And there are some outliers in session 4.
+```{r echo=FALSE, eval=TRUE}
+# Create a box plot of firingrate_mean by session
+ggplot(firingratemean, aes(x = factor(session), y = firingrate_mean, fill = factor(session))) +
+  geom_boxplot() +
+  labs(x = "Session", y = "Firing Rate Mean") +
+  scale_fill_discrete(name = "Session")
+```
+
+The data has 1158 observations in 5 sessions. The data minimum mean of firing rate is 0.404, and the maximum mean of the firing rate is 7.219. The standard deviation is 1.204829 and the median is 2.962008.
+```{r echo=FALSE, eval=TRUE}
+# Compute summary statistics for firingrate_mean
+summary(firingratemean$firingrate_mean)
+sd(firingratemean$firingrate_mean)
+median(firingratemean$firingrate_mean)
+
+```
+
+
+## Inferential analysis
+
+In this analysis, we will be exploring a two-way mixed effect model that incorporates left and right contrasts as fixed-effect factors, and includes a random intercept for each session. To begin, we will test the necessity of the interaction term between the two fixed-effect factors. We will compare the full model, which includes the interaction term, to the reduced model, which does not.
+Full model:
+$$Y_{ijkl}=\mu_{..}+\alpha_i+\beta_j+\gamma_k+(\alpha\beta)_{ij}+\epsilon_{ijkl}$$
+Reduced model:
+$$Y_{ijkl}=\mu_{..}+\alpha_i+\beta_j+\gamma_k+\epsilon_{ijkl}$$
+where ${\epsilon_{ijkl}}$~${N(0,\sigma^2)}$ and all random variales are mutually independent.
+${Y_{ijkl}}$ is the firing rate mean for the lth observation of ith left contrast and jth right contrast in the kth session.
+${\mu_{..}}$ is the overall mean of the response variable.
+${\alpha_i}$ is indicator variables for the left contrast factors, respectively, taking a value of 0, 0.25, 0.5, 1.
+${\beta_j}$ is indicator variables for the right contrast factors, respectively, taking a value of 0, 0.25, 0.5, 1.
+${\gamma_k}$ is the sessions of each group, taking a value of 1,2,3,4,5.
+${(\alpha\beta)_{ij}}$ are the coefficients for the left contrast and right contrast main effects, respectively, representing the expected change in firing rate mean when left contrast or right contrast is present, holding the other factor constant.
+${\epsilon_{ijkl}}$ represents the random error.
+
+
+```{r echo=FALSE, eval=TRUE}
+# Fit the full model with the interaction term
+library(lme4)
+# Fit the full model with interaction term
+full_model <- lmer(firingrate_mean ~ left*right + (1|session), data=firingratemean)
+
+# Fit the reduced model without interaction term
+reduced_model <- lmer(firingrate_mean ~ left + right + (1|session), data=firingratemean)
+
+# Perform likelihood ratio test
+lrt <- anova(full_model, reduced_model)
+
+# Print the results
+lrt
+```
+The p-value associated with the likelihood ratio test is less than our chosen significance level 0.05, we reject the null hypothesis and conclude that there is evidence of an interaction effect between the two factors.
+
+So the ultimate two-way mixed effect is:
+$$Y_{ijkl}=\mu_{..}+\alpha_i+\beta_j+\gamma_k+(\alpha\beta)_{ij}+\epsilon_{ijkl}$$
+
+We can know that the positive coefficients suggest that the firing rate of neurons increases with the presentation of stimuli on the left and right, and the t values indicate that these relationships are statistically significant.
+
+Therefore, based on these results, we can conclude that neurons in the visual cortex respond to the stimuli presented on the left and right, and that the relationship between the firing rate of neurons and the presentation of stimuli is positive and statistically significant.
+```{r echo=FALSE, eval=TRUE}
+coef(full_model)
+```
+
+
+## Sensitivity analysis
+
+The linear mixed effects model includes fixed effects for the two independent variables (left and right) and their interaction, as well as a random intercept for each session. 
+
+The REML criterion is a measure of the goodness-of-fit of the model, with lower values indicating better fit. In this case, the REML criterion is 2350.2.
+
+The scaled residuals are measures of the difference between the observed data and the model predictions, standardized to have mean 0 and standard deviation 1. In this case, the residuals appear to be slightly skewed and have some outliers.
+
+The correlation of fixed effects table shows the pairwise correlations between the fixed effects. In this case, there is little correlation between any of the variables.
+
+The Shapiro-Wilk normality test is a test of whether the residuals follow a normal distribution. In this case, the p-value is very small, indicating that the residuals do not follow a normal distribution.
+```{r echo=FALSE, eval=TRUE}
+summary(full_model)
+hist(resid(full_model))
+plot(full_model, which=1)
+shapiro.test(resid(full_model))
+```
+
+In this results, the VIF for the left predictor variable is 1.775, which is well below the threshold for high multicollinearity. The VIF for the right predictor variable is 1.596, also below the threshold. The VIF for the interaction term left:right is 2.360, which is also below the threshold.
+
+Therefore, based on these results, there is no serious multicollinearity issue among the predictor variables in this model.
+```{r echo=FALSE, eval=TRUE}
+# Check for collinearity among predictor variables
+cor(firingratemean[,c("left", "right")])
+library(car)
+vif(full_model)
+```
+
+
+## Predictive modeling
+
+We are interested in predicting an outcome and feedback. We use four variables: mean firing rate, left contrast, good contrast, session, and feedback as an outcome.
+We remove the first 100 data for session 1 to test set. To using logistics, we transform the feedback from -1 to 0,
+```{r echo=FALSE, eval=TRUE}
+# Split the data into training and test sets (first 100 trials removed)
+firingratemean$feedback[which(firingratemean$feedback==-1)]=0
+train = firingratemean[101: nrow(firingratemean),]
+test = firingratemean[1:100,]
+
+logistic_train=glm(feedback~left+right+session+firingrate_mean,data=train,family="binomial")
+threshold = 0.5
+logistic_predict = ifelse(predict(logistic_train, newdata = test)>threshold,1,0)
+actual_values = test$feedback
+#confusion matrix
+lg_matrix = table(logistic_predict, actual_values)
+lg_matrix
+```
+Then we know:
+Accuracy=(11+56)/100=0.67
+Sensitivity=56/(18+56)=0.7568 
+Specificity=11/(11+15)=0.42308
+
+```{r echo=FALSE, eval=TRUE}
+library(pROC)
+logistic_roc <- roc(actual_values,as.numeric(logistic_predict))
+plot(logistic_roc , print.auc=TRUE,)
+```
+
+
+## Discussion
+
+In this report, we use mixed-effect models to figure out the first question: how do neurons in the visual cortex respond to stimuli presented on the left and right? And the answer to this question is that neurons in the visual cortex respond to the stimuli presented on the left and right and that the relationship between the firing rate of neurons and the presentation of stimuli is positive and statistically significant. And we use logistics to determine how this information can be utilized to predict the outcome of each trial. 
+
+Although we do much on this report, there are still some things that could be improved. We just used the mean firing rate to figure out the question, and there may be other ways to make a more accurate result. And for predicting data, we do not have extensive data set to predict a more precise outcome. Despite these limitations, the findings provide important insights into the impact of neural activity in the visual cortex of mice and can inform policy and future research in this area.
+
+
+# Reference {-}
+
+
+Steinmetz, N.A., Zatka-Haas, P., Carandini, M. et al. Distributed coding of choice, action and engagement across the mouse brain. Nature 576, 266–273 (2019). https://doi.org/10.1038/s41586-019-1787-x
+
+
